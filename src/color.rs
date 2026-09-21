@@ -215,8 +215,14 @@ fn initial(
         [306, 601, 117]
     };
     let projection = |i: usize| ((0..3).map(|c| i32::from(p[i][c]) * axis[c]).sum::<i32>(), i);
-    let low = (0..16).min_by_key(|&i| projection(i)).unwrap();
-    let high = (0..16).max_by_key(|&i| projection(i)).unwrap();
+    let mut low = projection(0);
+    let mut high = low;
+    for i in 1..16 {
+        let value = projection(i);
+        low = low.min(value);
+        high = high.max(value);
+    }
+    let (low, high) = (low.1, high.1);
     (
         quantize(std::array::from_fn(|c| p[low][c] as f32)),
         quantize(std::array::from_fn(|c| p[high][c] as f32)),
@@ -260,16 +266,14 @@ fn cluster(
         let a = expand(best.a);
         let b = expand(best.b);
         let direction = std::array::from_fn::<_, 3, _>(|c| b[c] - a[c]);
-        let mut ordered: [usize; 16] = std::array::from_fn(|i| i);
-        ordered.sort_unstable_by_key(|&i| {
-            (
-                (0..3).map(|c| p[i][c] as i32 * direction[c]).sum::<i32>(),
-                i,
-            )
-        });
+        // Compute projections once, rather than in every sort comparison.
+        // The source index remains the tie-break, preserving selector order.
+        let mut ordered: [(i32, u8); 16] =
+            std::array::from_fn(|i| ((0..3).map(|c| p[i][c] as i32 * direction[c]).sum(), i as u8));
+        ordered.sort_unstable();
         let mut prefix = [[0i32; 3]; 17];
-        for (i, &index) in ordered.iter().enumerate() {
-            prefix[i + 1] = std::array::from_fn(|c| prefix[i][c] + p[index][c] as i32);
+        for (i, &(_, index)) in ordered.iter().enumerate() {
+            prefix[i + 1] = std::array::from_fn(|c| prefix[i][c] + p[index as usize][c] as i32);
         }
         let mut hist = [0usize; 4];
         for i in 0..16 {
@@ -288,23 +292,21 @@ fn cluster(
             } else {
                 tables::ORDERS4[tables::BEST4[row][q] as usize]
             };
-            let (mut aa, mut ab, mut bb) = (0, 0, 0);
-            let (mut rhs_a, mut rhs_b) = ([0; 3], [0; 3]);
-            let mut at = 0;
-            for (i, &count) in h.iter().enumerate().take(scale + 1) {
-                let count = count as usize;
-                let a = (scale - i) as i32;
-                let b = i as i32;
-                aa += a * a * count as i32;
-                ab += a * b * count as i32;
-                bb += b * b * count as i32;
-                for c in 0..3 {
-                    let sum = prefix[at + count][c] - prefix[at][c];
-                    rhs_a[c] += a * sum;
-                    rhs_b[c] += b * sum;
-                }
-                at += count;
-            }
+            let [n0, n1, n2, n3] = h.map(i32::from);
+            let (aa, ab, bb) = if best.three {
+                (4 * n0 + n1, n1, n1 + 4 * n2)
+            } else {
+                (9 * n0 + 4 * n1 + n2, 2 * (n1 + n2), n1 + 4 * n2 + 9 * n3)
+            };
+            let first = h[0] as usize;
+            let second = first + h[1] as usize;
+            let third = second + h[2] as usize;
+            // Weighted interval sums telescope into the interior prefix sums.
+            // All arithmetic stays integral until the original endpoint solve.
+            let rhs_a: [i32; 3] = std::array::from_fn(|c| {
+                prefix[first][c] + prefix[second][c] + if best.three { 0 } else { prefix[third][c] }
+            });
+            let rhs_b: [i32; 3] = std::array::from_fn(|c| scale * prefix[16][c] - rhs_a[c]);
             let det = aa * bb - ab * ab;
             let trial = if det == 0 {
                 solid(p, average, best.three)
