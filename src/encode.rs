@@ -81,14 +81,15 @@ pub fn encode_into(
     if output.len() != format.encoded_len(width, height)? {
         return Err(Error::OutputLength);
     }
-    for (i, out) in output.chunks_exact_mut(format.block_bytes()).enumerate() {
-        block(
-            &pixels(width as usize, height as usize, rgba, i),
-            format,
-            quality,
-            out,
-        );
-    }
+    encode_blocks(
+        width as usize,
+        height as usize,
+        rgba,
+        format,
+        quality,
+        0,
+        output,
+    );
     Ok(())
 }
 /// Encode blocks using the caller's Rayon pool. No private thread pool is created.
@@ -110,14 +111,38 @@ pub fn encode_parallel(
         .par_chunks_mut(format.block_bytes() * 64)
         .enumerate()
         .for_each(|(batch, chunk)| {
-            for (i, out) in chunk.chunks_exact_mut(format.block_bytes()).enumerate() {
-                block(
-                    &pixels(width as usize, height as usize, rgba, batch * 64 + i),
-                    format,
-                    quality,
-                    out,
-                );
-            }
+            encode_blocks(
+                width as usize,
+                height as usize,
+                rgba,
+                format,
+                quality,
+                batch * 64,
+                chunk,
+            );
         });
     Ok(output)
+}
+
+fn encode_blocks(
+    width: usize,
+    height: usize,
+    rgba: &[u8],
+    format: Format,
+    quality: Quality,
+    first: usize,
+    output: &mut [u8],
+) {
+    // Keep only the previous block: repeated flat regions need no new search,
+    // and each parallel batch owns its cache without allocating or locking.
+    let mut previous = None;
+    let mut encoded = [0; 16];
+    for (i, out) in output.chunks_exact_mut(format.block_bytes()).enumerate() {
+        let current = pixels(width, height, rgba, first + i);
+        if previous.as_ref() != Some(&current) {
+            block(&current, format, quality, &mut encoded[..out.len()]);
+            previous = Some(current);
+        }
+        out.copy_from_slice(&encoded[..out.len()]);
+    }
 }
