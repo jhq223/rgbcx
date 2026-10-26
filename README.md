@@ -33,8 +33,8 @@ fn main() -> Result<(), rgbcx::Error> {
 }
 ```
 
-Input pixels are tightly packed RGBA8. Output is a row-major array of 4x4 blocks,
-without a DDS, KTX or other container header. Nonzero dimensions are accepted
+Input pixels are tightly packed RGBA8. Output is a row-major array of 4x4 blocks.
+Applications supply container metadata when writing DDS, KTX or other image files. Nonzero dimensions are accepted
 if buffer sizes fit in addressable memory. Partial blocks replicate edge pixels;
 `decode` crops those blocks to the requested dimensions. `Format::encoded_len`
 computes the required block buffer size; `encode_into` and `decode_into` write into exactly sized caller-owned buffers.
@@ -57,9 +57,10 @@ punch-through transparency. BC3 always uses four color interpolants.
 `Fast` uses a principal-axis fit and least-squares refinement. `Balanced` adds
 cluster fitting and retries difficult blocks with `High`. `High` searches more
 partitions and neighboring endpoints. Alpha encoding is the same in every mode.
-Color error uses integer RGB values; there is no color-space conversion,
-premultiplication, dithering or image resampling. Quality levels are search budgets,
-not guarantees of perceptual similarity or bit-identical output across architectures.
+Color error uses integer RGB values; quality levels set the search budget.
+Applications prepare color space, alpha premultiplication, dithering and image
+dimensions before encoding. Exact-output comparisons apply to the same build
+and architecture.
 
 Enable `parallel` for `encode_parallel`, which uses Rayon's current pool. It
 produces the same blocks as serial encoding on the same build. Applications that
@@ -108,8 +109,6 @@ refinement pass; the initial color fit still runs on the CPU.
 `gpu::Error` distinguishes invalid input, unavailable hardware and device failures.
 Invalid input leaves output unchanged. A device failure may leave partially updated
 blocks; retain the original blocks when implementing a fallback.
-Refinement minimizes RGB squared error, not a
-perceptual metric.
 
 ## Development
 
@@ -124,7 +123,7 @@ cargo test --release --all-features --tests -- --include-ignored
 The last command requires a hardware compute adapter. Tests cover reference alpha
 blocks, partial dimensions, concurrent calls and CPU/GPU equivalence.
 
-For local measurements, provide tightly packed raw RGBA8 bytes, not a PNG:
+For local measurements, provide tightly packed raw RGBA8 bytes:
 
 ```sh
 cargo run --release --all-features --example profile_encoder -- 512 512 image.rgba
