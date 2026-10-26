@@ -8,4 +8,4 @@ The fixture tests endpoints and packed selectors independently of the Rust encod
 
 `quality-bc1.bin` and `quality-bc3.bin` contain level-10 reference encodings of
 the deterministic 64x64 gradient and diagonal-line image in `tests/quality.rs`.
-They bound numerical color regressions; they do not measure perceptual quality.
+They bound numerical color regressions against those reference encodings.

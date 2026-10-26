@@ -4,7 +4,6 @@
 
 - Reuse encoded bytes for consecutive identical RGBA blocks without changing output.
 - Copy complete 4x4 pixel rows directly while preserving partial-edge replication.
-- Cover repeated blocks across image rows and parallel batch boundaries.
 
 ## 0.1.1
 
